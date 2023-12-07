@@ -44,7 +44,7 @@ variable "node_groups" {
     desired_size           = number
     max_size               = optional(number)
     min_size               = optional(number)
-    node_pool_class        = optional(string, "general")
+    labels                 = optional(map(string))
     user_data              = optional(string)
     vpc_security_group_ids = optional(list(string))
     taints = optional(map(object({

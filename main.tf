@@ -1,22 +1,3 @@
-locals {
-  access_policies = {
-    admin = {
-      statement = [{
-        Effect   = "Allow"
-        Resource = aws_eks_cluster.this.arn
-        Action   = "eks:*"
-      }]
-    }
-    describe = {
-      statement = [{
-        Effect   = "Allow"
-        Resource = aws_eks_cluster.this.arn
-        Action   = "eks:DescribeCluster"
-      }]
-    }
-  }
-}
-
 data "aws_region" "current" {}
 
 module "role" {
@@ -53,6 +34,7 @@ resource "aws_eks_cluster" "this" {
   name     = var.name
   role_arn = module.role.this.arn
   version  = var.kubernetes_version
+
   vpc_config {
     subnet_ids              = var.vpc_config.subnet_ids
     endpoint_private_access = var.vpc_config.endpoint_private_access
@@ -60,19 +42,17 @@ resource "aws_eks_cluster" "this" {
     public_access_cidrs     = var.vpc_config.public_access_cidrs
     security_group_ids      = var.vpc_config.security_group_ids
   }
+
   lifecycle {
     ignore_changes = [
       vpc_config[0].security_group_ids
     ]
   }
-  depends_on = [
-    module.role
-  ]
 }
 
 module "node_group" {
   source                 = "ptonini/eks-node-group/aws"
-  version                = "~> 1.0.0"
+  version                = "~> 1.1.0"
   for_each               = var.node_groups
   cluster_name           = aws_eks_cluster.this.name
   name                   = each.key
@@ -83,7 +63,7 @@ module "node_group" {
   max_size               = each.value.max_size
   min_size               = each.value.min_size
   user_data              = each.value.user_data
-  node_pool_class        = each.value.node_pool_class
+  labels                 = each.value.labels
   taints                 = each.value.taints
   vpc_security_group_ids = concat(each.value.vpc_security_group_ids == null ? [] : each.value.vpc_security_group_ids, [aws_eks_cluster.this.vpc_config[0].cluster_security_group_id])
   tags                   = each.value.tags
@@ -120,16 +100,16 @@ module "sa_role" {
 }
 
 module "access_policies" {
-  source   = "ptonini/iam-policy/aws"
-  version  = "~> 1.0.0"
-  for_each = local.access_policies
-  name     = "eks-${var.name}-${each.key}-access"
+  source  = "ptonini/iam-policy/aws"
+  version = "~> 1.0.0"
+  for_each = {
+    admin    = { statement = [{ Effect = "Allow", Resource = aws_eks_cluster.this.arn, Action = "eks:*" }] }
+    describe = { statement = [{ Effect = "Allow", Resource = aws_eks_cluster.this.arn, Action = "eks:DescribeCluster" }] }
+  }
+  name = "eks-${var.name}-${each.key}-access"
   policy = jsonencode({
     Version   = "2012-10-17"
     Statement = each.value.statement
   })
 }
 
-data "aws_eks_cluster_auth" "this" {
-  name = aws_eks_cluster.this.name
-}
